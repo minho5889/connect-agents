@@ -1,106 +1,108 @@
-# 01 — Amazon Connect Customer: Native AI Agent Landscape & Native-vs-Custom Decisions
+# The Amazon Connect Customer AI Agent Landscape in 2026 — What Changed, What's Native, and When to Build Custom
 
-> **Research deliverable 1 of 3.** Current-state landscape (newest-first) + a native-vs-custom decision framework.
-> **As of:** 2026-06-09. **Recency filter applied:** post–Nov 30, 2025. Pre-Nov-2025 "legacy self-service" is documented as deprecated-for-new-builds.
-> **Reviewed as:** Connect specialist SA + GenAI specialist SA. **Sources:** AWS Knowledge MCP (Administrator Guide + What's New + Q Connect SDK ref), listed at bottom.
+> **Research deliverable 1 of 3.** A long-form orientation to Connect Customer's native AI agents as they actually exist in mid-2026, plus a decision framework for native-vs-custom.
+> **As of:** 2026-06-09. **Recency filter:** post–Nov 30 2025. Pre-Nov-2025 "legacy self-service" is documented as deprecated-for-new-builds.
+> **Reviewed as:** Connect specialist SA + GenAI specialist SA. Companion to doc 02 (hands-on build) and doc 03 (Canada compliance).
 
 ---
 
-## 0. Locked research brief (context for all 3 docs)
+## Why this document exists
 
-- **Audience:** experienced Connect builder. Fundamentals skipped.
-- **Focus:** Connect's **native** AI agents (the native/custom line has moved — see §5).
-- **Channel:** **voice** (chat is the cheaper/faster sibling to pilot).
-- **Target system:** a **concierge** that triages and routes to **specialized AI agents**, with **human handoff**, evolving toward **action-taking**. Phase-1 capability = **grounded conversational Q&A**; action-taking is the architecture to grow into.
-- **AI roles:** customer-facing **self-service** + real-time **agent assist**.
-- **Hard constraint:** regions **us-east-1 + ca-central-1**, compliance = **Canadian bank / FI**. (Drives doc 03.)
+If you last looked at "AI in Amazon Connect" before late 2025, almost everything you knew has a new name and a new center of gravity. The product is now **Amazon Connect Customer**. "Amazon Q in Connect" is no longer the headline — it's one configurable agent type among many. And the thing you'd build today, **agentic self-service**, didn't exist a few months ago. This doc is the map: what the pieces are now called, what shipped, what's native, and where the line to "build it yourself" actually falls.
 
-## 1. Terminology reset (changed recently — get it right)
+It is deliberately opinionated and verbose, because the failure mode for an experienced builder here isn't "can't find the feature" — it's *building on last year's pattern*. We'll call those out explicitly.
 
-| Old term | Current term (April 2026 rename) |
+## 1. The naming reset (read this first)
+
+The rebrand is not cosmetic; it reaches into the console, the docs, and — partially — the API.
+
+| You may know it as | It is now |
 |---|---|
-| Amazon Connect (product) | **Amazon Connect Customer** |
-| "Amazon Q in Connect" as the AI brand | **one of several configurable AI agents** — no longer the headline |
-| GenAI self-service (built-in tools) | **Legacy self-service** — *"not receiving new feature updates"* |
-| — (new) | **Agentic self-service** — recommended |
+| Amazon Connect (the product) | **Amazon Connect Customer** |
+| "Amazon Q in Connect" (the AI brand) | **One configurable AI agent type** among several — not the headline |
+| Generative-AI self-service (built-in tools) | **Legacy self-service** — *"not receiving new feature updates"* |
+| — | **Agentic self-service** — the recommended path for all new builds |
 
-> ⚠️ **SA note — the brand moved but the API didn't.** The control-plane/SDK namespace is still **`qconnect` ("Q Connect")**: e.g. the Lex intent is `AMAZON.QinConnectIntent`, and the orchestrator config object is `OrchestrationAiAgentConfiguration` in the `qconnect` SDK. When you build with IaC/SDK, expect `qconnect`/`Q in Connect` identifiers even though the console says "Connect Customer AI agents." Don't let the rename confuse your Terraform/CLI.
+There's a trap here that will bite your infrastructure-as-code: **the brand moved, but the API did not.** The control plane, CLI, and SDKs still use the **`qconnect`** namespace ("Q in Connect"). The Lex built-in intent is `AMAZON.QinConnectIntent`. The orchestrator config object is `OrchestrationAIAgentConfiguration` in the `qconnect` API. So your Terraform/boto3/CLI will say `qconnect` everywhere even as the console says "Connect Customer AI agents." Expect it; don't fight it.
 
-## 2. The 2025–2026 shift (newest-first)
+## 2. What actually shipped (newest-first)
 
-| Date | Launch | Why it matters |
+```mermaid
+timeline
+    title Connect Customer AI — the agentic era
+    Oct 2025 : Open-source MCP server for AgentCore (Kiro / Claude Code / Cursor / Q CLI)
+    Nov 30 2025 : Agentic self-service (Nova Sonic voice) : MCP support : Native testing & simulation (preview) : AI-agent analytics & traces : Enhanced agent assist : AI case summaries
+    Dec 2025 : GenAI performance evaluations +5 languages (incl. Canada) : AI message streaming default-on for new instances
+    Mar 2026 : Nova Sonic voice → London : Testing & simulation → chat : AgentCore stateful MCP (elicitation/sampling/progress)
+    Apr–May 2026 : Nova Sonic voice → Seoul/Singapore/Frankfurt + Korean & more locales
+```
+
+The throughline: Connect's AI went from **"answer questions from a knowledge base"** to **"reason across multiple steps and take actions via tools."** For your concierge project, the consequence is concrete — **action-taking is now a native capability, not a custom build you defer to phase 2.**
+
+## 3. The mental model: typed agents, not a chatbot
+
+The single most useful thing to internalize: in Connect Customer, an **"AI agent" is a typed, configurable resource**, and your whole system is composed from these types plus tools and routing — not from a fleet of conversational bots talking to each other.
+
+```mermaid
+flowchart TB
+    subgraph designer[AI agent designer]
+      direction LR
+      Orch[Orchestration<br/>agentic reasoner]
+      SS[Self-Service]
+      AR[Answer Recommendation]
+      MS[Manual Search]
+      AA[Agent Assistance]
+      EM[Email agents]
+    end
+    Orch --> P[AI prompt - required]
+    Orch --> G[AI guardrail - optional]
+    Orch --> T[Tools: MCP / Return-to-Control / Constant]
+    Orch --> Loc[Locale]
+    P -.system defaults if not overridden.-> Orch
+    style Orch fill:#ff9900,color:#000
+```
+
+The system ships **default AI agents per use case** (Orchestration, Answer Recommendation, Manual Search, Self Service, Email Response/Overview/Generative Answer, Note Taking, Agent Assistance, Case Summarization). You **override** the ones you want to customize; the rest fall back to system defaults at runtime. An agent is the tuple **(AI prompt(s) + one AI guardrail + tools + locale)**.
+
+### The three tiers of self-service — don't confuse them
+A recurring mistake (I made it in my own first draft) is conflating "native legacy" with "a custom sample." There are **three distinct things**:
+
+| Tier | What it is | When to use |
 |---|---|---|
-| **Apr–May 2026** | Voice (Nova Sonic) → Seoul/Singapore/Frankfurt + Korean & 9 more locales; release-note features | Voice expansion continues — **ca-central-1 still absent** |
-| **Mar 2026** | Voice → London; **testing & simulation for chat**; **AgentCore stateful MCP** | EU voice residency now possible; richer tool servers |
-| **Dec 2025** | GenAI performance evaluations → 5 more languages (incl. Canada) | Post-contact QA strong in Canada |
-| **Nov 30 2025** | **Agentic self-service** (Nova Sonic voice); **MCP support**; **native testing & simulation (preview)**; AI-agent analytics; enhanced agent assist; AI case summaries | The core shift: orchestrator agents that reason + act on voice/chat |
-| **Oct 2025** | Open-source MCP server for AgentCore (Kiro/Claude Code/Cursor/Q CLI) | Dev-loop tooling for MCP tools |
+| **Agentic self-service** | Orchestrator agent: multi-step reasoning, MCP tools, continuous conversation. Tools = MCP / Return-to-Control (`Complete`, `Escalate`, custom) / Constant. Voice responses wrapped in `<message>` tags. | ✅ **All new builds** |
+| **Native legacy self-service** | Built-in tools `QUESTION`, `ESCALATION`, `CONVERSATION`, `COMPLETE`, `FOLLOW_UP_QUESTION` via `AMAZON.QinConnectIntent`; returns control to the flow per tool (`ESCALATION` takes the *Error* branch of *Get customer input*). | ⚠️ Concepts only — no new features |
+| **Custom solution** (e.g. `aws-samples/contact-center-genai-agent`) | A fully hand-built Lex + Bedrock Knowledge Base RAG app you own end-to-end. | Reference for the *retrieval layer*, not a target architecture |
 
-**Takeaway:** the center of gravity moved from "Q in Connect answers questions" to **orchestrator AI agents that reason across steps and invoke MCP tools to take action**. Your action-taking goal is now *native*.
+## 4. The native toolbox, briefly (deep dives in doc 02)
 
-## 3. The native AI agent surface today
+- **Action-taking via MCP** — out-of-the-box tools (update contact attributes, retrieve case info, start tasks), **flow modules as tools** (reuse Connect logic), and **custom/third-party tools via AgentCore Gateway**. Hard limits: **30-second** tool timeout; **one gateway ↔ one instance ↔ one MCP server**.
+- **Voice** — **Amazon Nova Sonic** speech-to-speech, configured per Lex bot locale + a *Generative* Set voice block. (Regional caveat is the whole of doc 03.)
+- **AI Guardrails** — Amazon Bedrock guardrails, **max 3**: content filters, denied topics (≤30), **contextual grounding** (anti-hallucination), word filters, **sensitive-information/PII filters** (block or mask; SSN/DOB/card + custom regex). No image filter. Adds **time-to-first-token** latency on streaming voice.
+- **Model lifecycle** — each prompt pins a model; agents reference immutable prompt versions; default configs are pinned-or-`Latest`. Connect auto-redirects on deprecation, but pin versions for change control. **Available models depend on the instance Region** (doc 03 has the table — and it's a real constraint in Canada).
+- **Testing & simulation** — native, pre-deploy validation (observe/check/actions); available in ca-central-1; limits of 5 concurrent / 100 queue / 5-min.
+- **Analytics & traces** — per-interaction tool-invocation visibility for audit.
 
-### 3.1 AI agents are typed, configurable resources
-In the **AI agent designer** you create agents of these types: **Orchestration** (the agentic reasoner; system default `SelfServiceOrchestrator`), **Self-Service**, **Answer Recommendation**, **Manual Search**, **Agent assistance** (Connect Assistant), and **email** agents. System **default AI agents** exist per use case; custom agents **override specific defaults** while inheriting the rest. — [create-ai-agents](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-agents.html)
+## 5. Cost lens (the SA habit)
+AI agents, Nova Sonic, MCP usage, and guardrails are **usage-priced add-ons on top of Connect's base per-minute/per-message rates** — see the [pricing page](https://aws.amazon.com/connect/pricing/) for figures (not quoting unverified numbers). The SA framing: human handle time dominates contact-center cost, so deflection usually pays for premium AI rates — **but** guardrail scans and multi-tool turns add both latency and per-interaction cost. Model the *turns per resolution*, not just per-minute price.
 
-**An AI agent = AI prompt(s) + AI guardrail + tools + locale.** Per the `OrchestrationAiAgentConfiguration` SDK object, an orchestrator references: instance ARN, locale, **AI prompt ID (required)**, **AI guardrail ID**, and **tool configurations**. — [customize-connect-ai-agents](https://docs.aws.amazon.com/connect/latest/adminguide/customize-connect-ai-agents.html)
+## 6. Native vs custom — the decision framework
 
-### 3.2 Three tiers of self-service (don't confuse them)
-| Tier | What it is | Status |
-|---|---|---|
-| **Agentic self-service** | Orchestrator agent: multi-step reasoning, MCP tools, continuous conversation; `<message>` tags on voice; tools = MCP / Return-to-Control (`Complete`,`Escalate`,custom) / Constant | ✅ **Recommended** |
-| **Native legacy self-service** | Built-in tools **`QUESTION`, `ESCALATION`, `CONVERSATION`, `COMPLETE`, `FOLLOW_UP_QUESTION`** via `AMAZON.QinConnectIntent` + Connect assistant block; returns control to flow per tool. Note: `ESCALATION` takes the **Error** branch of *Get customer input* | ⚠️ No new features; OK to read for concepts, **don't anchor new builds** |
-| **Custom solution** (e.g. `aws-samples/contact-center-genai-agent`) | A hand-built Lex + Bedrock Knowledge Base RAG app you own end-to-end | Reference only — *not* a native feature, *not* "native legacy" |
-
-> 🔧 **Correction from first draft:** the GitHub sample is a **custom** solution, **distinct from native legacy self-service**. Both differ from agentic self-service. Use the sample for *retrieval-layer ideas*, not as a target architecture.
-
-### 3.3 Voice: Amazon Nova Sonic speech-to-speech
-Per Conversational AI bot locale (Speech model → Speech-to-Speech → Nova Sonic) + a **Set voice block** with **Override speaking style → Generative** and a Nova-Sonic voice (launch set: Matthew en-US, Amy en-GB, Olivia en-AU, Lupe es-US). Connect keeps orchestration/intents/flows; Nova Sonic does expressive speech↔speech. — [nova-sonic-speech-to-speech](https://docs.aws.amazon.com/connect/latest/adminguide/nova-sonic-speech-to-speech.html)
-
-### 3.4 Action-taking via MCP
-1. **OOTB tools** (update contact attributes, retrieve case info, start tasks). 2. **Flow modules as MCP tools** (reuse Connect business logic across deterministic + generative flows). 3. **Custom/third-party** via **Bedrock AgentCore Gateway** (APIs/Lambdas → MCP tools).
-> **Limits:** MCP invocation **30-sec timeout**; gateway maps **1 gateway ↔ 1 Connect instance ↔ 1 MCP server**. Per-tool controls: instructions, override-input, filter-output. — [ai-agent-mcp-tools](https://docs.aws.amazon.com/connect/latest/adminguide/ai-agent-mcp-tools.html)
-
-### 3.5 AI Guardrails (Bedrock-based — bank-critical)
-Connect AI guardrails are **Amazon Bedrock guardrails**, built no-code in the designer. **Up to 3 custom guardrails.** Policies:
-- **Content filters** (Hate, Insults, Sexual, Violence, Misconduct, Prompt Attack)
-- **Denied topics** (up to 30)
-- **Contextual grounding check** — detects/filters **hallucinations** vs source + query relevance
-- **Word filters** (exact match — profanity, competitor names)
-- **Sensitive information filters** — **block or mask PII** (SSN, DOB, address) + **custom regex**
-- Custom **blocked message**
-> ⚠️ **No image content filter** in Connect. Languages = Bedrock **classic tier**. **Streaming latency:** guardrails buffer/scan text before delivery → higher **time-to-first-token**; weigh on latency-sensitive voice. — [create-ai-guardrails](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-guardrails.html)
-
-### 3.6 Model lifecycle & change control (often missed)
-- Each **AI prompt** pins a model; an **AI agent** references **immutable prompt versions** (model baked in). Default configs can be **pinned to a version or set to `Latest`**.
-- **Custom prompt → manual** model upgrade; **no-override custom agent → auto-upgrade**; **system defaults → latest** unless pinned.
-- Connect **notifies on deprecation** and **auto-redirects** to a supported model post-deprecation (no outage), but AWS recommends **upgrading manually to choose + test** the replacement.
-- 🚩 **Available models depend on the instance's AWS Region** — directly relevant to ca-central-1 (see doc 03). — [upgrade-models-ai-prompts-agents](https://docs.aws.amazon.com/connect/latest/adminguide/upgrade-models-ai-prompts-agents.html)
-
-### 3.7 Test before you ship: native testing & simulation
-Validate self-service flows (voice + chat) with a visual designer or APIs; results show pass/fail + interaction path + logs, surfaced in analytics dashboards. **Available in all regions where Connect is offered (incl. ca-central-1).** Model = observe/check/actions. **Limits: 5 concurrent tests, queue 100, 5-min per test; simulated contacts can reach live agents if not terminated.** — [testing-simulation](https://docs.aws.amazon.com/connect/latest/adminguide/testing-simulation.html) (covered in doc 02 §7)
-
-## 4. Cost lens (SA habit — verify rates on the pricing page)
-AI agents, Nova Sonic voice, MCP usage, and Bedrock guardrails are **usage-priced add-ons on top of Connect's per-minute/per-message base** — rates are on the [Amazon Connect pricing page](https://aws.amazon.com/connect/pricing/) (I'm not quoting figures I haven't price-verified). SA guidance: in a contact center, **human handle time dominates cost**, so deflection via self-service is usually net-positive even at premium AI rates; but guardrails + multiple MCP round-trips add latency and per-interaction cost — model both. — [cost-optimization-bp](https://docs.aws.amazon.com/connect/latest/adminguide/cost-optimization-bp.html)
-
-## 5. Native-vs-custom decision framework
-
-The line moved: native agentic self-service **is** the agent framework; "custom" now mostly means **the MCP tool servers + backend** (often **AgentCore Runtime**), not a hand-rolled LLM loop.
+The boundary moved. Native agentic self-service **is** the agent framework; "custom" now mostly means **the MCP tool servers and backend you own** (often on AgentCore Runtime), not a hand-rolled LLM loop inside Connect.
 
 | Axis | Lean **native** | Lean **custom** (AgentCore/Bedrock behind MCP) |
 |---|---|---|
-| Conversation orchestration on voice/chat | ✅ orchestrator + Nova Sonic | rarely rebuild |
+| Conversation orchestration on voice/chat | ✅ orchestrator + Nova Sonic | rarely worth rebuilding |
 | Grounded Q&A (phase 1) | ✅ KB retrieve tool | only for bespoke retrieval |
 | Actions in your systems | OOTB + flow-module tools | ✅ custom MCP servers wrapping Lambdas/APIs |
 | Complex multi-agent / non-Connect channels | orchestrator + tools only | ✅ external agents as MCP/A2A tools |
-| **Strict Canadian residency / model choice** | ⚠️ cross-region inference + region-limited models (doc 03) | ✅ pin Bedrock model + region (subject to availability) |
+| **Strict Canadian residency / model choice** | ⚠️ cross-region inference + region-limited models (doc 03) | ✅ pin Bedrock model + Region (subject to availability) |
 | Speed to first working voice agent | ✅ fastest | slower |
 
-**Rule of thumb:** build **conversation + escalation natively**; build **actions as MCP tools you own**; reserve fully-custom agent loops for what the orchestrator can't express, or for residency/model control native managed-AI can't guarantee.
+**Rule of thumb:** build **conversation + escalation natively**; build **actions as MCP tools you own**; reserve fully-custom agent loops for what the orchestrator can't express, or for residency/model control that native managed-AI can't guarantee. That last clause is not hypothetical for a Canadian bank — it's the subject of doc 03.
 
 ## Sources
-- [ai-agent-self-service](https://docs.aws.amazon.com/connect/latest/adminguide/ai-agent-self-service.html) · [agentic-self-service](https://docs.aws.amazon.com/connect/latest/adminguide/agentic-self-service.html) · [(legacy) generative-ai-powered-self-service](https://docs.aws.amazon.com/connect/latest/adminguide/generative-ai-powered-self-service.html)
-- [create-ai-agents](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-agents.html) · [customize-connect-ai-agents](https://docs.aws.amazon.com/connect/latest/adminguide/customize-connect-ai-agents.html) · [create-ai-guardrails](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-guardrails.html) · [upgrade-models-ai-prompts-agents](https://docs.aws.amazon.com/connect/latest/adminguide/upgrade-models-ai-prompts-agents.html)
-- [ai-agent-mcp-tools](https://docs.aws.amazon.com/connect/latest/adminguide/ai-agent-mcp-tools.html) · [nova-sonic-speech-to-speech](https://docs.aws.amazon.com/connect/latest/adminguide/nova-sonic-speech-to-speech.html) · [testing-simulation](https://docs.aws.amazon.com/connect/latest/adminguide/testing-simulation.html) · [ai-in-connect](https://docs.aws.amazon.com/connect/latest/adminguide/ai-in-connect.html)
+- [Connect Customer AI agent self-service](https://docs.aws.amazon.com/connect/latest/adminguide/ai-agent-self-service.html) · [Agentic self-service](https://docs.aws.amazon.com/connect/latest/adminguide/agentic-self-service.html) · [(legacy) generative-AI self-service](https://docs.aws.amazon.com/connect/latest/adminguide/generative-ai-powered-self-service.html)
+- [Create AI agents](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-agents.html) · [Create AI prompts](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-prompts.html) · [Create AI guardrails](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-guardrails.html) · [Upgrade models for AI prompts & agents](https://docs.aws.amazon.com/connect/latest/adminguide/upgrade-models-ai-prompts-agents.html)
+- [AI agent MCP tools](https://docs.aws.amazon.com/connect/latest/adminguide/ai-agent-mcp-tools.html) · [Nova Sonic S2S](https://docs.aws.amazon.com/connect/latest/adminguide/nova-sonic-speech-to-speech.html) · [Testing & simulation](https://docs.aws.amazon.com/connect/latest/adminguide/testing-simulation.html) · [AI in Connect Customer](https://docs.aws.amazon.com/connect/latest/adminguide/ai-in-connect.html)
 - What's New (Nov 30 2025): [agentic self-service](https://aws.amazon.com/about-aws/whats-new/2025/11/amazon-connect-agentic-self-service/) · [MCP support](https://aws.amazon.com/about-aws/whats-new/2025/11/amazon-connect-mcp-support/) · [testing & simulation](https://aws.amazon.com/about-aws/whats-new/2025/11/amazon-connect-native-testing-simulation-capabilities-preview/)
 - [Prescriptive Guidance: Agentic AI patterns](https://docs.aws.amazon.com/prescriptive-guidance/latest/agentic-ai-patterns/introduction.html) · [Connect pricing](https://aws.amazon.com/connect/pricing/)
