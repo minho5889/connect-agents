@@ -90,8 +90,16 @@ This is how the concierge "briefs" the specialist (human or another flow) instea
 - **Security profiles** = the boundary of what each AI agent can do. They govern: which tools it can invoke, what data it can touch, who can configure agents/prompts/guardrails, and whether an employee may have an AI agent act on their behalf.
 - **Tool ↔ permission mapping** mirrors human permissions, e.g. Cases tool ⇒ *Cases – View/Edit*; KB Retrieve ⇒ *Connect assistant – View Access*; Tasks ⇒ *Tasks – Create*.
 - **Shared-permission rule (agent assist):** the human's profile must include the same permissions as the AI agent's tools, or tool calls fail.
-- **AI Guardrails** are designer objects — apply content/safety constraints (important for a regulated FI).
-- **Analytics + traces** give per-interaction tool-invocation visibility for audit/troubleshooting.
+- **AI Guardrails** (Amazon Bedrock guardrails, max 3): for an FI, the two that earn their keep are **Sensitive information filters** (block/mask PII — SSN, DOB, address + custom regex, in *both* user input and model output) and **Contextual grounding checks** (anti-hallucination vs source). Plus content filters, denied topics (≤30), word filters. ⚠️ **No image filter**; guardrail scanning **adds time-to-first-token latency** on streaming voice — apply selectively if latency-critical.
+- **Model version pinning** = change control. Pin AI-prompt model versions (vs `Latest`) so a bank can validate a model before it changes in production; Connect auto-redirects only on deprecation. Note **available models differ by region** (doc 03).
+- **Analytics + traces** give per-interaction tool-invocation visibility (request/response payloads) for audit/troubleshooting.
+
+## 6b. Test before you ship: native testing & simulation
+
+Connect's **native testing & simulation** validates self-service flows (voice + chat) before deployment — essential for change management in a regulated FI. Build test cases in a visual designer or via API as **observe / check / actions** interaction groups (assert prompts, attributes, tool selections); results show pass/fail + interaction path + logs in analytics dashboards.
+- **Available in all regions Connect is offered, incl. ca-central-1.**
+- **Limits:** 5 concurrent tests · queue capacity 100 · **5-min per test** · ⚠️ simulated contacts can **reach live agents** if not terminated with an Action block.
+- Use it for **regression-testing the orchestrator** when you change prompts, tools, or models.
 
 ## 7. Backend patterns (where the orchestrator calls into)
 
@@ -111,9 +119,11 @@ Given your priorities (grounded Q&A first, voice, Canadian-bank constraints) and
 
 **Why this first:** it exercises the entire native spine (orchestrator → grounded Q&A → one action → escalation with context → human queue) on voice, while surfacing the Canada constraints early instead of after you've over-invested.
 
+**Before "done":** attach one **AI Guardrail** (sensitive-info PII masking + contextual grounding), **pin the model version**, and write **2–3 simulation test cases** (happy path, escalation, tool-failure) so the orchestrator is regression-testable from day one. Model **cost** per the [Connect pricing page](https://aws.amazon.com/connect/pricing/): AI agent + Nova Sonic + guardrail + per-MCP-round-trip usage — multi-tool turns multiply both latency and spend.
+
 ## Sources
 - [Use agentic self-service](https://docs.aws.amazon.com/connect/latest/adminguide/agentic-self-service.html) · [AI agent MCP tools](https://docs.aws.amazon.com/connect/latest/adminguide/ai-agent-mcp-tools.html) · [Create AI agents](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-agents.html)
-- [Assign security profile permissions to AI agents](https://docs.aws.amazon.com/connect/latest/adminguide/ai-agent-security-profile-permissions.html)
+- [Assign security profile permissions to AI agents](https://docs.aws.amazon.com/connect/latest/adminguide/ai-agent-security-profile-permissions.html) · [Create AI guardrails](https://docs.aws.amazon.com/connect/latest/adminguide/create-ai-guardrails.html) · [Connect Customer Testing and Simulation](https://docs.aws.amazon.com/connect/latest/adminguide/testing-simulation.html) · [Upgrade models for AI prompts and agents](https://docs.aws.amazon.com/connect/latest/adminguide/upgrade-models-ai-prompts-agents.html)
 - [Nova Sonic Speech-to-Speech](https://docs.aws.amazon.com/connect/latest/adminguide/nova-sonic-speech-to-speech.html)
 - [Integrate an MCP server with Connect Customer (AgentCore Gateway)](https://docs.aws.amazon.com/connect/latest/adminguide/3p-apps-mcp-server.html) · [Deploy MCP servers in AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp.html)
 - What's New: [AgentCore Runtime stateful MCP](https://aws.amazon.com/about-aws/whats-new/2026/03/amazon-bedrock-agentcore-runtime-stateful-mcp/)
