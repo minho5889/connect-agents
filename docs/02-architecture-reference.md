@@ -279,7 +279,7 @@ aws qconnect update-ai-guardrail --cli-input-json '{
 }'
 ```
 
-> 🇨🇦 **Illustrative addition (not verified against the Bedrock PII type list):** for a Canadian **Social Insurance Number**, add a custom regex under `sensitiveInformationPolicyConfig.regexesConfig` (e.g., `\b\d{3}[- ]?\d{3}[- ]?\d{3}\b`) with `action: ANONYMIZE`. Confirm the exact `regexesConfig` field and supported built-in PII entity types in the Bedrock Guardrails reference before relying on it.
+> 🇨🇦 **Canada built-in PII type (verified):** there's a built-in **`CA_SOCIAL_INSURANCE_NUMBER`** entity type (and `CA_HEALTH_NUMBER`) — no custom regex needed. Add `{ "type": "CA_SOCIAL_INSURANCE_NUMBER", "action": "ANONYMIZE" }` to `piiEntitiesConfig`. For anything truly custom, `sensitiveInformationPolicyConfig.regexesConfig` takes `{name, description, pattern, action}`. (The runnable scaffold in `agents/concierge/setup_agent.py` uses both via boto3.)
 
 > ⚠️ **Voice latency caveat:** guardrails buffer and scan text before delivery, which **adds time-to-first-token** on streaming responses. On a live voice call that's perceptible — apply guardrails deliberately, and test (see §11).
 

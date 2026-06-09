@@ -1,0 +1,34 @@
+{
+  "_comment": "Input schema for a custom 'Escalate' Return-to-Control tool. Create this in the AI agent designer (Add tool -> Create new AI Tool -> type 'Return to Control'). When Aria invokes it, the conversation ends and these fields are written to Lex session attributes, which the contact flow reads via a 'Check contact attributes' block (Namespace=Lex, Key=Session attributes, Session Attribute Key=Tool) to route to the advisor queue with context. Schema verified against the AWS agentic-self-service example.",
+  "type": "object",
+  "properties": {
+    "customerIntent": {
+      "type": "string",
+      "description": "A brief phrase describing what the customer wants to accomplish"
+    },
+    "sentiment": {
+      "type": "string",
+      "description": "Customer's emotional state during the conversation",
+      "enum": ["positive", "neutral", "frustrated"]
+    },
+    "escalationSummary": {
+      "type": "string",
+      "description": "Summary for the advisor: what the customer asked, what was attempted, and why escalation is needed",
+      "maxLength": 500
+    },
+    "escalationReason": {
+      "type": "string",
+      "description": "Category for the escalation reason",
+      "enum": [
+        "investment_advice",
+        "complex_request",
+        "technical_issue",
+        "customer_frustration",
+        "policy_exception",
+        "out_of_scope",
+        "other"
+      ]
+    }
+  },
+  "required": ["escalationReason", "escalationSummary", "customerIntent", "sentiment"]
+}

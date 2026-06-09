@@ -1,0 +1,3 @@
+# Dependencies for deploying wealth_mcp_server.py to AgentCore Runtime.
+# AgentCore reads this file when packaging the MCP server for deployment.
+mcp

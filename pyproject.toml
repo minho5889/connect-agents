@@ -12,6 +12,10 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.6",
 ]
+# MCP tool servers (shared/mcp/). Needed to run/deploy the FastMCP server.
+mcp = [
+    "mcp>=1.2",
+]
 
 [tool.ruff]
 line-length = 100
