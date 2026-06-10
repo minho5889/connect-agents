@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars and fill in. (*.tfvars is gitignored.)
+
+# us-east-1 = full sandbox incl. Nova Sonic; ca-central-1 = Canada-resident (docs/03).
+region = "us-east-1"
+
+name_prefix = "aria-dev"
+
+# Globally unique. Becomes the https://<alias>.my.connect.aws subdomain.
+instance_alias = "aria-dev-REPLACE_ME"
+
+# Globally unique S3 bucket name for call recordings.
+recordings_bucket_name = "connect-agents-recordings-REPLACE_ME"

@@ -46,6 +46,7 @@ override.tf.json
 terraform.rc
 tfplan
 *.tfplan
+.build/
 
 # ---------- IDE ----------
 .idea/
