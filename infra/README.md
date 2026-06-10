@@ -23,10 +23,19 @@ infra/
 ├── modules/
 │   ├── connect_foundation/   # aws_connect_instance + S3 recordings + security profile
 │   ├── tool_backend/         # IAM + Lambda (Aria's MCP tool backend, real handler)
+│   ├── contact_flow/         # flows from vendored .json.tftpl templates + export script
+│   ├── lex_bot/              # Lex V2 bot + IAM; V2 Connect association via awscc (skeleton)
 │   └── agentcore_gateway/    # awscc AgentCore gateway + target (attrs flagged # VERIFY)
 └── environments/
     └── dev/                  # wires the modules; run terraform here
 ```
+
+**Contact flows are never hand-authored.** They follow the
+author → export → template → deploy pattern — see
+[modules/contact_flow/README.md](modules/contact_flow/README.md). The
+**terraform MCP server** (configured at user scope; tools live after an app
+restart) provides live provider schemas for completing the remaining
+`# VERIFY` skeletons (AgentCore gateway attrs, Lex locale/alias).
 
 ## Quick start
 
