@@ -4,17 +4,12 @@ variable "name_prefix" {
 }
 
 variable "tool_lambda_arn" {
-  description = "ARN of the tool-backend Lambda to expose as MCP tools."
+  description = "ARN of the tool-backend Lambda; gateway IAM policy allows invoking it."
   type        = string
 }
 
 variable "connect_discovery_url" {
-  description = "Connect instance OIDC discovery URL: https://<instance>.my.connect.aws/.well-known/openid-configuration"
-  type        = string
-}
-
-variable "gateway_role_arn" {
-  description = "Execution role ARN for the AgentCore gateway. VERIFY requirement."
+  description = "Connect OIDC URL for production JWT auth: https://<instance>.my.connect.aws/.well-known/openid-configuration. Unused in dev (authorizer_type=NONE)."
   type        = string
   default     = ""
 }

@@ -30,25 +30,27 @@ module "welcome_flow" {
   }
 }
 
-# Lex V2 bot shell (IAM + bot). Locale/version/alias + the V2 Connect
-# association are # VERIFY skeletons inside the module — complete them with
-# the terraform MCP server, and note the QinConnectIntent caveat in its README.
+# Lex V2 bot (IAM + bot resource verified). Locale/version/alias skeletons
+# remain commented — complete after enabling AMAZON.QinConnectIntent in the
+# Lex console (see infra/modules/lex_bot/README.md). The V2 Connect
+# association (awscc_connect_integration_association) is live and activates
+# automatically once var.bot_alias_arn is set.
 module "lex_bot" {
   source = "../../modules/lex_bot"
 
   name_prefix          = var.name_prefix
   connect_instance_arn = module.connect_foundation.instance_arn
+  # bot_alias_arn = "<alias-arn>"  # set after manual Lex console step
 }
 
-# AgentCore gateway that exposes the tool Lambda to Connect as MCP tools.
-# Enable once you've completed the `# VERIFY` attributes in the module
-# (see infra/modules/agentcore_gateway/README.md). Left commented so a first
-# `terraform plan` succeeds on the verified foundation alone.
-#
-# module "agentcore_gateway" {
-#   source = "../../modules/agentcore_gateway"
-#
-#   name_prefix           = var.name_prefix
-#   tool_lambda_arn       = module.tool_backend.lambda_arn
-#   connect_discovery_url = "https://${var.instance_alias}.my.connect.aws/.well-known/openid-configuration"
-# }
+# AgentCore Gateway — verified against awscc v1.88.0 (no gateway_target resource
+# exists; tool registration happens via `agentcore deploy` post-apply).
+module "agentcore_gateway" {
+  source = "../../modules/agentcore_gateway"
+
+  name_prefix     = var.name_prefix
+  tool_lambda_arn = module.tool_backend.lambda_arn
+
+  # Uncomment for production Connect JWT auth:
+  # connect_discovery_url = "https://${var.instance_alias}.my.connect.aws/.well-known/openid-configuration"
+}

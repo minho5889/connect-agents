@@ -62,12 +62,14 @@ resource "aws_lexv2models_bot" "this" {
 # exists -> awscc_lex_bot_alias. VERIFY its schema, then feed its ARN below.
 
 # --- Associate the V2 bot with the Connect instance ----------------------------
-# CFN AWS::Connect::IntegrationAssociation props (verified): InstanceId
-# (instance ARN), IntegrationType=LEX_BOT, IntegrationArn (V2 bot ALIAS ARN).
-# Enable once the alias above exists.
-#
-# resource "awscc_connect_integration_association" "lex_v2" {
-#   instance_id      = var.connect_instance_arn
-#   integration_type = "LEX_BOT"
-#   integration_arn  = var.bot_alias_arn # the V2 bot alias ARN
-# }
+# Verified against awscc provider v1.88.0: instance_id, integration_type,
+# integration_arn are the three required fields. integration_arn must be the
+# bot ALIAS ARN (not the bot ARN). Enabled only when bot_alias_arn is provided —
+# the alias is created manually (Lex console) after enabling AMAZON.QinConnectIntent.
+resource "awscc_connect_integration_association" "lex_v2" {
+  count = var.bot_alias_arn != "" ? 1 : 0
+
+  instance_id      = var.connect_instance_arn
+  integration_type = "LEX_BOT"
+  integration_arn  = var.bot_alias_arn
+}

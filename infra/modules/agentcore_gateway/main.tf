@@ -1,47 +1,63 @@
-# AgentCore Gateway that exposes the tool-backend Lambda to Connect as MCP tools.
+# AgentCore Gateway that exposes the wealth MCP tools to Connect AI agents.
 #
-# Resource TYPES are verified (CloudFormation -> awscc):
-#   AWS::BedrockAgentCore::Gateway        -> awscc_bedrockagentcore_gateway
-#   AWS::BedrockAgentCore::GatewayTarget  -> awscc_bedrockagentcore_gateway_target
-#   (native aws_bedrockagentcore_gateway / _gateway_target also exist)
+# All attributes verified against awscc provider v1.88.0 via Terraform MCP server.
+# Required: authorizer_type, name, role_arn.
 #
-# ATTRIBUTE names below are partially flagged `# VERIFY`: confirm the exact
-# argument schema before apply with:
-#   terraform providers schema -json | jq '.provider_schemas[].resource_schemas.awscc_bedrockagentcore_gateway'
-# (CFN props seen: Name, Description, AuthorizerType, AuthorizerConfiguration,
-#  RoleArn, ProtocolType, KmsKeyArn, ExceptionLevel, InterceptorConfigurations.)
+# NOTE: awscc_bedrockagentcore_gateway_target does NOT exist in the provider.
+# Tool registration (linking this gateway to an AgentCore Runtime) is done via:
+#   agentcore deploy (shared/mcp/deploy.sh) — the CLI registers the runtime ARN
+#   with the gateway during deployment, or via the Connect AI agent designer
+#   under Integrations → Add MCP server using the gateway_url output.
 
-resource "awscc_bedrockagentcore_gateway" "this" {
-  name        = "${var.name_prefix}-aria-gateway"
-  description = "Exposes wealth-management tool Lambdas to Connect Aria as MCP tools."
-
-  # protocol_type = "MCP"        # VERIFY
-  # role_arn      = var.gateway_role_arn  # VERIFY (gateway execution role)
-
-  # The gateway must trust the Connect instance's OIDC discovery endpoint.
-  # Verified Discovery URL format (Connect docs):
-  #   https://<instance>.my.connect.aws/.well-known/openid-configuration
-  # authorizer_type = "CUSTOM_JWT"   # VERIFY
-  # authorizer_configuration = {     # VERIFY exact nested schema
-  #   custom_jwt_authorizer = {
-  #     discovery_url = var.connect_discovery_url
-  #   }
-  # }
+resource "aws_iam_role" "gateway" {
+  name = "${var.name_prefix}-agentcore-gateway"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "bedrock-agentcore.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
 }
 
-# A target turns the tool-backend Lambda into MCP tools on the gateway.
-resource "awscc_bedrockagentcore_gateway_target" "tools" {
-  # VERIFY argument names against the provider schema before apply.
-  # gateway_identifier = awscc_bedrockagentcore_gateway.this.gateway_identifier
-  name        = "${var.name_prefix}-wealth-tools"
-  description = "Wealth-management tool backend (balance, quote, booking)."
+resource "aws_iam_role_policy" "gateway" {
+  role = aws_iam_role.gateway.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = var.tool_lambda_arn
+      }
+    ]
+  })
+}
 
-  # target_configuration = {        # VERIFY nested schema
-  #   mcp = {
-  #     lambda = {
-  #       lambda_arn = var.tool_lambda_arn
-  #       # tool_schema describing each tool's input/output
-  #     }
-  #   }
-  # }
+resource "awscc_bedrockagentcore_gateway" "this" {
+  name          = "${var.name_prefix}-aria-gateway"
+  description   = "Exposes wealth-management MCP tools to the Connect Aria AI agent."
+  role_arn      = aws_iam_role.gateway.arn
+  # protocol_type defaults to MCP (omitting avoids awscc JSON-string encoding quirk).
+
+  # Dev: no auth. Production Connect integration: switch to CUSTOM_JWT and
+  # add authorizer_configuration.custom_jwt_authorizer.discovery_url pointing
+  # to: https://<instance>.my.connect.aws/.well-known/openid-configuration
+  authorizer_type = "NONE"
+
+  protocol_configuration = {
+    mcp = {
+      instructions = "Wealth-management tools: account balance, transactions, stock quotes, branch hours, advisor booking."
+    }
+  }
+
+  tags = {
+    Project = var.name_prefix
+  }
 }
